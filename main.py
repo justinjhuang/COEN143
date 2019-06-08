@@ -5,7 +5,7 @@ import socket
 import firebase_admin
 from firebase_admin import credentials, db
 
-hostMACAddress = '00:1f:e1:dd:08:3d'  # The MAC address of a Bluetooth adapter on the server.
+hostMACAddress = 'c0:83:46:31:51:48'  # The MAC address of a Bluetooth adapter on the server.
 port = 3  # 3 is an arbitrary choice. However, it must match the port used by the client.
 data = None
 
@@ -56,16 +56,13 @@ def main():
 
 
 def bluetooth():
-    backlog = 2
+    # backlog = 2
     size = 1024
     s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
-    s.bind((hostMACAddress, port))
-    s.listen(backlog)
+    s.connect((hostMACAddress, port))
     
-    while True:
-        client, address = s.accept()
-        x = threading.Thread(target=bluetooth_client, args=(client, size))
-        x.start()
+    x = threading.Thread(target=bluetooth_client, args=(s, size))
+    x.start()
 
 
 def bluetooth_client(client: socket, size):
