@@ -42,18 +42,19 @@
 # IMPORT
 
 from __future__ import print_function
-import sys
-import os
-import time
-from abc import abstractmethod
-from bluepy.btle import BTLEException
 
+import os
+import sys
+import threading
+import time
+
+import firebase_admin
+from blue_st_sdk.feature import FeatureListener
 from blue_st_sdk.manager import Manager
 from blue_st_sdk.manager import ManagerListener
 from blue_st_sdk.node import NodeListener
-from blue_st_sdk.feature import FeatureListener
-from blue_st_sdk.features.feature_audio_adpcm import FeatureAudioADPCM
-from blue_st_sdk.features.feature_audio_adpcm_sync import FeatureAudioADPCMSync
+from bluepy.btle import BTLEException
+from firebase_admin import credentials, db
 
 # PRECONDITIONS
 #
@@ -74,8 +75,11 @@ INTRO = """####################
 # Bluetooth Scanning time in seconds.
 SCANNING_TIME_s = 5
 
-# Number of notifications to get before disabling them.
-FREQUENCY = 0.2
+data = None
+dirty = True
+
+s0 = None
+s1 = None
 
 
 # FUNCTIONS
@@ -138,8 +142,9 @@ class MyNodeListener(NodeListener):
 # Implementation of the interface used by the Feature class to notify that a
 # feature has updated its data.
 #
-class MyFeatureListener(FeatureListener):
+class TemperatureListener(FeatureListener):
     num = 0
+    sensor = None
     
     #
     # To be called whenever the feature updates its data.
@@ -148,17 +153,25 @@ class MyFeatureListener(FeatureListener):
     # @param sample  Data extracted from the feature.
     #
     def on_update(self, feature, sample):
-        print(feature)
+        print('temp', feature)
 
 
-# MAIN APPLICATION
+class PressureListener(FeatureListener):
+    num = 0
+    sensor = None
+    
+    #
+    # To be called whenever the feature updates its data.
+    #
+    # @param feature Feature that has updated.
+    # @param sample  Data extracted from the feature.
+    #
+    def on_update(self, feature, sample):
+        print('pres', feature)
 
-#
-# Main application.
-#
-def main():
-    # Printing intro.
-    print_intro()
+
+def bluetooth():
+    global s0, s1
     
     try:
         # Creating Bluetooth Manager.
@@ -166,7 +179,7 @@ def main():
         manager_listener = MyManagerListener()
         manager.add_listener(manager_listener)
         
-        while True:
+        while 2:
             # Synchronous discovery of Bluetooth devices.
             print('Scanning Bluetooth devices...\n')
             manager.discover(SCANNING_TIME_s)
@@ -185,7 +198,7 @@ def main():
             # Listing discovered devices.
             if not discovered_devices:
                 print('\nNo Bluetooth devices found.')
-                sys.exit(0)
+                continue
             print('\nAvailable Bluetooth devices:')
             i = 1
             for device in discovered_devices:
@@ -211,32 +224,43 @@ def main():
             device.connect()
             print('Connection done.')
             
+            if s0 is None:
+                s0 = device
+                sensor = 's0'
+            elif s1 is None:
+                s1 = device
+                sensor = 's1'
+            else:
+                return
+            
+            # while True:
+            # Getting features.
+            # i = 1
+            features = device.get_features()
+            
+            # for feature in features:
+            #     print('%d) %s' % (i, feature.get_name()))
+            
+            temp_feature = features[1]
+            pres_feature = features[2]
+            
+            # Enabling notifications.
+            feature_listener = TemperatureListener()
+            feature_listener.sensor = sensor
+            temp_feature.add_listener(feature_listener)
+            device.enable_notifications(temp_feature)
+            feature_listener = PressureListener()
+            feature_listener.sensor = sensor
+            pres_feature.add_listener(feature_listener)
+            device.enable_notifications(pres_feature)
+            
+            # Getting notifications.
             while True:
-                # Getting features.
-                i = 1
-                features = device.get_features()
-                
-                for feature in features:
-                    print('%d) %s' % (i, feature.get_name()))
-                
-                temp_feature = features[1]
-                pres_feature = features[2]
-                
-                # Enabling notifications.
-                feature_listener = MyFeatureListener()
-                temp_feature.add_listener(feature_listener)
-                device.enable_notifications(temp_feature)
-                feature_listener = MyFeatureListener()
-                pres_feature.add_listener(feature_listener)
-                device.enable_notifications(pres_feature)
-                
-                # Getting notifications.
-                while True:
-                    device.wait_for_notifications(FREQUENCY)
-                
-                # # Disabling notifications.
-                # device.disable_notifications(feature)
-                # feature.remove_listener(feature_listener)
+                device.wait_for_notifications(1)
+            
+            # # Disabling notifications.
+            # device.disable_notifications(feature)
+            # feature.remove_listener(feature_listener)
     
     except BTLEException as e:
         print(e)
@@ -250,6 +274,57 @@ def main():
             sys.exit(0)
         except SystemExit:
             os._exit(0)
+
+
+# MAIN APPLICATION
+
+#
+# Main application.
+#
+def main():
+    global data, dirty, s0, s1
+    
+    # Printing intro.
+    print_intro()
+    
+    # Fetch the service account key JSON file contents
+    cred = credentials.Certificate('smartwindow-da455-firebase-adminsdk-mscl2-c5ad694b44.json')
+    # Initialize the app with a service account, granting admin privileges
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': 'https://smartwindow-da455.firebaseio.com/'
+    })
+    
+    ref = db.reference('/')
+    
+    if os.path.isfile('key.txt'):
+        with open('key.txt', 'r') as f:
+            data_ref = ref.child(f.read())
+            data = data_ref.get()
+    else:
+        data = {
+            's1': {
+                'temperature': 0,
+                'humidity': 0
+            },
+            's2': {
+                'temperature': 0,
+                'humidity': 0
+            }
+        }
+        data_ref = ref.push(data)
+        # Get the unique key generated by push()
+        new_id = data_ref.key
+        with open('key.txt', 'w') as f:
+            f.write(new_id)
+    
+    x = threading.Thread(target=bluetooth)
+    x.start()
+    
+    while True:
+        if dirty:
+            data_ref.update(data)
+            dirty = False
+        time.sleep(5)
 
 
 if __name__ == "__main__":
