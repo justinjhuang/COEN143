@@ -44,6 +44,7 @@
 from __future__ import print_function
 
 import os
+import re
 import sys
 import threading
 import time
@@ -153,10 +154,15 @@ class TemperatureListener(FeatureListener):
     # @param sample  Data extracted from the feature.
     #
     def on_update(self, feature, sample):
-        print('temp', feature)
+        global data, dirty
+        
+        val = float(re.match('Temperature\([0-9]*\): ([0-9.]) C', feature).group(1))
+        if val != data[self.sensor]['temperature']:
+            data[self.sensor]['temperature'] = val
+            dirty = True
 
 
-class PressureListener(FeatureListener):
+class HumidityListener(FeatureListener):
     num = 0
     sensor = None
     
@@ -167,7 +173,12 @@ class PressureListener(FeatureListener):
     # @param sample  Data extracted from the feature.
     #
     def on_update(self, feature, sample):
-        print('pres', feature)
+        global data, dirty
+        
+        val = float(re.match('Humidity\([0-9]*\): ([0-9.]) %', feature).group(1))
+        if val != data[self.sensor]['humidity']:
+            data[self.sensor]['humidity'] = val
+            dirty = True
 
 
 def bluetooth():
@@ -241,18 +252,18 @@ def bluetooth():
             # for feature in features:
             #     print('%d) %s' % (i, feature.get_name()))
             
-            temp_feature = features[1]
-            pres_feature = features[2]
+            temp_feature = features[2]
+            humid_feature = features[3]
             
             # Enabling notifications.
             feature_listener = TemperatureListener()
             feature_listener.sensor = sensor
             temp_feature.add_listener(feature_listener)
             device.enable_notifications(temp_feature)
-            feature_listener = PressureListener()
+            feature_listener = HumidityListener()
             feature_listener.sensor = sensor
-            pres_feature.add_listener(feature_listener)
-            device.enable_notifications(pres_feature)
+            humid_feature.add_listener(feature_listener)
+            device.enable_notifications(humid_feature)
             
             # Getting notifications.
             while True:
