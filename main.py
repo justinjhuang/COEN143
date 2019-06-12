@@ -79,8 +79,8 @@ SCANNING_TIME_s = 5
 data = None
 dirty = True
 
-s0 = None
 s1 = None
+s2 = None
 
 
 # FUNCTIONS
@@ -156,10 +156,11 @@ class TemperatureListener(FeatureListener):
     def on_update(self, feature, sample):
         global data, dirty
         
-        val = float(re.match('Temperature\([0-9]*\): ([0-9.]) C', feature).group(1))
+        val = float(re.match('Temperature\([0-9]*\): ([0-9\.]*) C', str(feature)).group(1))
         if val != data[self.sensor]['temperature']:
             data[self.sensor]['temperature'] = val
             dirty = True
+            print('changed temperature', self.sensor, val)
 
 
 class HumidityListener(FeatureListener):
@@ -175,14 +176,15 @@ class HumidityListener(FeatureListener):
     def on_update(self, feature, sample):
         global data, dirty
         
-        val = float(re.match('Humidity\([0-9]*\): ([0-9.]) %', feature).group(1))
+        val = float(re.match('Humidity\([0-9]*\): ([0-9\.]*) %', str(feature)).group(1))
         if val != data[self.sensor]['humidity']:
             data[self.sensor]['humidity'] = val
             dirty = True
+            print('changed humidity', self.sensor, val)
 
 
 def bluetooth():
-    global s0, s1
+    global s1, s2
     
     try:
         # Creating Bluetooth Manager.
@@ -190,7 +192,7 @@ def bluetooth():
         manager_listener = MyManagerListener()
         manager.add_listener(manager_listener)
         
-        while 2:
+        while True:
             # Synchronous discovery of Bluetooth devices.
             print('Scanning Bluetooth devices...\n')
             manager.discover(SCANNING_TIME_s)
@@ -235,12 +237,12 @@ def bluetooth():
             device.connect()
             print('Connection done.')
             
-            if s0 is None:
-                s0 = device
-                sensor = 's0'
-            elif s1 is None:
+            if s1 is None:
                 s1 = device
                 sensor = 's1'
+            elif s2 is None:
+                s2 = device
+                sensor = 's2'
             else:
                 return
             
@@ -293,7 +295,7 @@ def bluetooth():
 # Main application.
 #
 def main():
-    global data, dirty, s0, s1
+    global data, dirty, s1, s2
     
     # Printing intro.
     print_intro()
